@@ -86,6 +86,7 @@ X_train_resampled, y_train_resampled = smote.fit_resample(X_train_pcr, y_train_p
 # print("pCR 分类训练集:", X_train_resampled.shape, "验证集:", X_val_pcr.shape)  # pCR 分类训练集: (498, 118) 验证集: (79, 118)
 # print("RFS 回归训练集:", X_train_rfs.shape, "验证集:", X_val_rfs.shape)  # RFS 回归训练集: (316, 118) 验证集: (79, 118)
 
+# Step 6: Model Selection: CNN
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
