@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.impute import SimpleImputer, KNNImputer
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.decomposition import PCA
+from sklearn.inspection import permutation_importance
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
@@ -69,12 +70,12 @@ plt.hist(y_train_RFS, bins=30)
 plt.title("Target Variable Distribution")
 plt.show()
 
-y_train_RFS_log = np.log1p(y_train_RFS)
-y_val_RFS_log = np.log1p(y_val_RFS)
-
-plt.hist(y_train_RFS_log, bins=30)
-plt.title("Target Variable Distribution")
-plt.show()
+# y_train_RFS_log = np.log1p(y_train_RFS)
+# y_val_RFS_log = np.log1p(y_val_RFS)
+#
+# plt.hist(y_train_RFS_log, bins=30)
+# plt.title("Target Variable Distribution")
+# plt.show()
 
 # Step 6: Model Selection
 # from xgboost import XGBRegressor
@@ -176,8 +177,43 @@ rf_regressor = RandomForestRegressor(
     verbose=0,
     warm_start=False,
 )
+
+# train
 rf_regressor.fit(X_train_RFS, y_train_RFS)
-y_pred_RFS = rf_regressor.predict(X_val_RFS)
+# y_pred_RFS = rf_regressor.predict(X_val_RFS)
+
+# 计算特征重要性（基于特征置换）
+perm_importance = permutation_importance(
+    rf_regressor,
+    X_val_RFS,
+    y_val_RFS,
+    scoring='r2',  # 使用 R² 作为评估指标
+    n_repeats=10,
+    random_state=42
+)
+
+# 打印特征的重要性
+feature_importance = perm_importance.importances_mean
+feature_names = X_train_RFS.columns if hasattr(X_train_RFS, 'columns') else range(X_train_RFS.shape[1])
+# for name, importance in zip(feature_names, feature_importance):
+#     print(f"Feature: {name}, Importance: {importance:.4f}")
+
+# 可视化特征重要性
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(10, 6))
+plt.barh(feature_names, feature_importance)
+plt.xlabel('Feature Importance (Permutation)')
+plt.title('Permutation Feature Importance')
+plt.show()
+
+low_importance_features = [name for name, importance in zip(feature_names, feature_importance) if importance < 0.01]
+X_train_RFS_reduced = X_train_RFS.drop(columns=low_importance_features)
+X_val_RFS_reduced = X_val_RFS.drop(columns=low_importance_features)
+
+# re-train
+rf_regressor.fit(X_train_RFS_reduced, y_train_RFS)
+y_pred_RFS = rf_regressor.predict(X_val_RFS_reduced)
 
 # Step 7: Evaluation
 mse = mean_squared_error(y_val_RFS, y_pred_RFS)
@@ -198,3 +234,50 @@ plt.xlabel("Actual Values")
 plt.ylabel("Predicted Values")
 plt.title("Actual vs Predicted Values (Random Forest)")
 plt.show()
+
+# Step 8: Predict from Final Testset
+# Loading Final Test Dataset
+test_data = pd.read_excel("../dataset/FinalTestDataset2024.xls")
+
+# Extract the 'ID' column
+test_ids = test_data['ID']
+
+# Data Preprocessing
+test_data.replace(999, np.nan, inplace=True)
+test_data['Gene'] = test_data['Gene'].fillna(-1)
+test_data.drop(columns=['ID'], inplace=True)
+test_data[categorical_features] = imputer_cat.transform(test_data[categorical_features])
+test_data[numerical_features] = imputer_num.transform(test_data[numerical_features])
+
+# Outliers
+for col in numerical_features:
+    q1 = test_data[col].quantile(0.20)
+    q3 = test_data[col].quantile(0.80)
+    iqr = q3 - q1
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+    test_data[col] = np.where(test_data[col] < lower_bound, lower_bound, test_data[col])
+    test_data[col] = np.where(test_data[col] > upper_bound, upper_bound, test_data[col])
+
+# Data Standardization
+test_data[numerical_features] = scaler.transform(test_data[numerical_features])
+
+# Applying PCA to reduce dimensions
+test_data = pca.transform(test_data)
+test_data = pd.DataFrame(test_data)
+
+# 删除低重要性特征
+test_data_reduced = test_data.drop(columns=low_importance_features, errors='ignore')
+
+# 确保测试数据特征顺序与训练数据一致
+test_data_reduced = test_data_reduced[X_train_RFS_reduced.columns]
+
+# Predict
+predictions = pd.DataFrame({"ID": test_ids})
+
+RFS_pred = rf_regressor.predict(test_data_reduced)
+predictions['RelapseFreeSurvival (outcome)'] = RFS_pred
+
+# Save predictions to a CSV file
+predictions.to_csv("RFSPrediction.csv", index=False)
+print("\nRFSPrediction.csv saved!\n")
