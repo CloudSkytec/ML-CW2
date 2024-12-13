@@ -64,6 +64,18 @@ X_train_RFS, X_val_RFS, y_train_RFS, y_val_RFS = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
+# Plot target variable distribution
+plt.hist(y_train_RFS, bins=30)
+plt.title("Target Variable Distribution")
+plt.show()
+
+y_train_RFS_log = np.log1p(y_train_RFS)
+y_val_RFS_log = np.log1p(y_val_RFS)
+
+plt.hist(y_train_RFS_log, bins=30)
+plt.title("Target Variable Distribution")
+plt.show()
+
 # Step 6: Model Selection
 # from xgboost import XGBRegressor
 # from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
